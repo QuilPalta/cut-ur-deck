@@ -1,0 +1,14 @@
+{
+  "login": {
+    "title": "Cut Ur Deck",
+    "subtitle": "The command center for your staples and decks.",
+    "emailLabel": "Email Address",
+    "emailPlaceholder": "player@email.com",
+    "passwordLabel": "Password",
+    "passwordPlaceholder": "••••••••",
+    "loginBtn": "Sign In",
+    "registerBtn": "Create Account",
+    "loading": "Processing...",
+    "successMsg": "Check your inbox to confirm your email."
+  }
+}

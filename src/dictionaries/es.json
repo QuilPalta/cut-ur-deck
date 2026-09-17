@@ -1,0 +1,14 @@
+{
+  "login": {
+    "title": "Cut Ur Deck",
+    "subtitle": "El centro de comando para tus staples y mazos.",
+    "emailLabel": "Correo Electrónico",
+    "emailPlaceholder": "jugador@correo.com",
+    "passwordLabel": "Contraseña",
+    "passwordPlaceholder": "••••••••",
+    "loginBtn": "Iniciar Sesión",
+    "registerBtn": "Crear Cuenta",
+    "loading": "Procesando...",
+    "successMsg": "Revisa tu bandeja de entrada para confirmar tu correo."
+  }
+}
