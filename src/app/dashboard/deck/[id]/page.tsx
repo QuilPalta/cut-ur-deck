@@ -1,15 +1,17 @@
 "use client";
 
-import { useEffect, useState, useCallback } from "react";
+import { useEffect, useState, useCallback, useMemo } from "react";
 import { useParams } from "next/navigation";
 import { Cinzel } from "next/font/google";
-import { ChevronLeft, Swords, Loader2, LayoutList, X, Save, RefreshCw, Search, ArrowDownAZ, ArrowUpZA, Filter, Layers } from "lucide-react";
+import { ChevronLeft, Swords, Loader2, LayoutList, Save, RefreshCw, Search, ArrowDownAZ, ArrowUpZA, Filter, Layers } from "lucide-react";
 import Link from "next/link";
 import { createClient } from "@/lib/supabase/client";
 import { deckService, InteractiveCard } from "@/lib/deckService";
+import { sortingService, FilterType, SortOrder, GroupType } from "@/lib/sortingService";
 import Button from "@/components/ui/Button";
-import Switch from "@/components/ui/Switch";
 import Input from "@/components/ui/Input";
+import InteractiveCardRow from "@/components/InteractiveCardRow";
+import CardPreviewModal from "@/components/CardPreviewModal";
 
 const cinzel = Cinzel({ subsets: ["latin"], weight: ["400", "700", "900"] });
 
@@ -33,9 +35,9 @@ export default function DeckViewPage() {
   const [previewCard, setPreviewCard] = useState<string | null>(null);
 
   const [searchTerm, setSearchTerm] = useState("");
-  const [sortBy, setSortBy] = useState<"asc" | "desc">("asc");
-  const [filterBy, setFilterBy] = useState<"all" | "staples" | "missing">("all");
-  const [groupBy, setGroupBy] = useState<"none" | "type" | "color" | "status">("none");
+  const [sortBy, setSortBy] = useState<SortOrder>("asc");
+  const [filterBy, setFilterBy] = useState<FilterType>("all");
+  const [groupBy, setGroupBy] = useState<GroupType>("none");
 
   const fetchDeckData = useCallback(async () => {
     setLoading(true);
@@ -45,7 +47,6 @@ export default function DeckViewPage() {
     if (!session?.user) return;
 
     try {
-      // LLAMADA AL NUEVO SERVICIO MODULAR
       const manifest = await deckService.getDeckManifest(supabase, session.user.id, deckId);
       setDeck(manifest.deck);
       setCards(manifest.cards);
@@ -73,7 +74,6 @@ export default function DeckViewPage() {
     
     if (session?.user) {
       try {
-        // LLAMADA AL NUEVO SERVICIO MODULAR
         await deckService.updateDeckManifest(supabase, session.user.id, deckId, cards, originalCards);
         await fetchDeckData();
       } catch (error) {
@@ -83,64 +83,10 @@ export default function DeckViewPage() {
     setSaving(false);
   };
 
-  const displayedCards = [...cards]
-    .filter(card => card.card_name.toLowerCase().includes(searchTerm.toLowerCase()))
-    .filter(card => {
-      if (filterBy === "staples") return card.isStaple;
-      if (filterBy === "missing") return card.isStaple && !card.inDeck; 
-      return true;
-    })
-    .sort((a, b) => {
-      if (sortBy === "asc") return a.card_name.localeCompare(b.card_name);
-      return b.card_name.localeCompare(a.card_name);
-    });
-
-  const getGroupedCards = () => {
-    if (groupBy === "none") return { "Todas las cartas": displayedCards };
-    const groups: Record<string, InteractiveCard[]> = {};
-
-    displayedCards.forEach(card => {
-      let groupKey = "Otros";
-
-      if (groupBy === "status") {
-        if (card.isStaple && !card.inDeck) groupKey = "🔴 Faltantes Físicos (En Carpeta)";
-        else if (card.isStaple && card.inDeck) groupKey = "🟢 Staples (En Bóveda)";
-        else groupKey = "⚪ Cartas Base";
-      } 
-      else if (groupBy === "type") {
-        const typeStr = card.type?.toLowerCase() || "";
-        if (!typeStr) groupKey = "❓ Tipo Desconocido";
-        else if (typeStr.includes("creature")) groupKey = "🗡️ Criaturas";
-        else if (typeStr.includes("instant")) groupKey = "⚡ Instantáneos";
-        else if (typeStr.includes("sorcery")) groupKey = "🔥 Conjuros";
-        else if (typeStr.includes("artifact")) groupKey = "⚙️ Artefactos";
-        else if (typeStr.includes("enchantment")) groupKey = "✨ Encantamientos";
-        else if (typeStr.includes("planeswalker")) groupKey = "🧙‍♂️ Planeswalkers";
-        else if (typeStr.includes("land")) groupKey = "⛰️ Tierras";
-      } 
-      else if (groupBy === "color") {
-        const colors = card.colors || [];
-        if (colors.length === 0) groupKey = "⚪ Incoloro / Desconocido";
-        else if (colors.length > 1) groupKey = "🌈 Multicolor";
-        else {
-          if (colors[0] === "W") groupKey = "☀️ Blanco";
-          else if (colors[0] === "U") groupKey = "💧 Azul";
-          else if (colors[0] === "B") groupKey = "💀 Negro";
-          else if (colors[0] === "R") groupKey = "🔥 Rojo";
-          else if (colors[0] === "G") groupKey = "🌳 Verde";
-        }
-      }
-
-      if (!groups[groupKey]) groups[groupKey] = [];
-      groups[groupKey].push(card);
-    });
-
-    const sortedGroups: Record<string, InteractiveCard[]> = {};
-    Object.keys(groups).sort().forEach(key => { sortedGroups[key] = groups[key]; });
-    return sortedGroups;
-  };
-
-  const groupedCards = getGroupedCards();
+  // Uso del nuevo servicio de ordenamiento extraído
+  const groupedCards = useMemo(() => 
+    sortingService.processCards(cards, searchTerm, filterBy, sortBy, groupBy), 
+  [cards, searchTerm, filterBy, sortBy, groupBy]);
 
   if (loading) {
     return (
@@ -164,15 +110,9 @@ export default function DeckViewPage() {
   return (
     <main className="relative flex-1 w-full max-w-5xl mx-auto px-6 py-10 z-10 flex flex-col gap-8">
       
+      {/* Componente Modal Extraído */}
       {previewCard && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/80 backdrop-blur-sm" onClick={() => setPreviewCard(null)}>
-          <div className="relative" onClick={e => e.stopPropagation()}>
-            <button onClick={() => setPreviewCard(null)} className="absolute -top-12 right-0 p-2 bg-red-950/80 border border-red-500 rounded-full text-red-400 hover:bg-red-900 hover:text-white transition-colors">
-              <X className="w-6 h-6" />
-            </button>
-            <img src={`https://api.scryfall.com/cards/named?exact=${encodeURIComponent(previewCard)}&format=image`} alt={previewCard} className="max-w-[300px] md:max-w-[400px] rounded-[4.5%] shadow-2xl border-2 border-[#1c1611]" onError={(e) => { e.currentTarget.style.display = 'none'; alert("No se encontró imagen."); setPreviewCard(null); }} />
-          </div>
-        </div>
+        <CardPreviewModal cardName={previewCard} onClose={() => setPreviewCard(null)} />
       )}
 
       <div className="flex items-center justify-between">
@@ -191,14 +131,28 @@ export default function DeckViewPage() {
           <h1 className={`text-3xl md:text-5xl font-black tracking-widest uppercase text-transparent bg-clip-text bg-gradient-to-b from-[#e8e0d5] to-[#8a7b6b] drop-shadow-md ${cinzel.className}`}>{deck.name}</h1>
           <p className="text-[#a39481] mt-2 text-sm max-w-xl">Inspecciona el registro físico de tu mazo.</p>
         </div>
-        <div className="shrink-0 flex gap-4 text-center">
-          <div className="bg-[#050308] border-2 border-[#1c1611] px-4 py-2 rounded-sm shadow-inner">
-            <p className="text-[10px] uppercase font-bold text-[#8a7b6b] tracking-widest mb-1">Total</p>
-            <p className={`text-xl font-black text-[#e8e0d5] ${cinzel.className}`}>{cards.reduce((acc, curr) => acc + curr.quantity, 0)}</p>
-          </div>
-          <div className="bg-[#050308] border-2 border-[#1c1611] px-4 py-2 rounded-sm shadow-inner">
-            <p className="text-[10px] uppercase font-bold text-cyan-700 tracking-widest mb-1">Staples</p>
-            <p className={`text-xl font-black text-cyan-400 ${cinzel.className}`}>{staplesCount}</p>
+        
+        <div className="flex flex-col sm:flex-row items-center gap-4">
+          
+          {/* BOTÓN INTELIGENTE DE RECONSTRUCCIÓN */}
+          {cards.some(c => c.isStaple && !c.inDeck) && (
+            <Link 
+              href={`/dashboard/deck/${deck.id}/rebuild`}
+              className={`shrink-0 px-6 py-3 bg-gradient-to-b from-amber-600 to-amber-900 border-2 border-[#050308] rounded-sm font-bold text-white uppercase text-xs tracking-widest shadow-[0_4px_0_#020104] hover:translate-y-[2px] hover:shadow-[0_2px_0_#020104] active:translate-y-[4px] active:shadow-none transition-all ${cinzel.className}`}
+            >
+              Ensamblar Mazo
+            </Link>
+          )}
+
+          <div className="shrink-0 flex gap-4 text-center">
+            <div className="bg-[#050308] border-2 border-[#1c1611] px-4 py-2 rounded-sm shadow-inner">
+              <p className="text-[10px] uppercase font-bold text-[#8a7b6b] tracking-widest mb-1">Total</p>
+              <p className={`text-xl font-black text-[#e8e0d5] ${cinzel.className}`}>{cards.reduce((acc, curr) => acc + curr.quantity, 0)}</p>
+            </div>
+            <div className="bg-[#050308] border-2 border-[#1c1611] px-4 py-2 rounded-sm shadow-inner">
+              <p className="text-[10px] uppercase font-bold text-cyan-700 tracking-widest mb-1">Staples</p>
+              <p className={`text-xl font-black text-cyan-400 ${cinzel.className}`}>{staplesCount}</p>
+            </div>
           </div>
         </div>
       </header>
@@ -246,7 +200,7 @@ export default function DeckViewPage() {
         </div>
 
         <div className="relative z-10 p-4 md:p-6 flex-1 overflow-y-auto custom-scrollbar h-[500px]">
-          {displayedCards.length === 0 ? (
+          {Object.keys(groupedCards).length === 0 ? (
             <div className="flex flex-col items-center justify-center h-full text-[#8a7b6b] gap-2 py-10">
               <Search className="w-8 h-8 opacity-50" />
               <p className="text-sm font-bold tracking-widest uppercase">No se encontraron cartas</p>
@@ -261,22 +215,21 @@ export default function DeckViewPage() {
                   </h3>
                 )}
                 <div className="space-y-2">
+                  {/* Uso del componente Row extraído */}
                   {groupCards.map((card) => (
-                    <div key={card.id} className={`flex flex-col md:flex-row md:items-center justify-between gap-4 p-3 border-l-4 transition-colors rounded-r-sm shadow-sm ${card.isStaple ? "bg-cyan-950/10 border-cyan-800 hover:bg-cyan-950/30" : "bg-black/40 border-[#1c1611] hover:border-[#8a7b6b]/60"}`}>
-                      <div className="flex items-center gap-4 flex-1 min-w-0">
-                        <span className={`font-mono font-black text-sm w-6 shrink-0 ${card.isStaple ? "text-cyan-400" : "text-[#8a7b6b]"}`}>{card.quantity}x</span>
-                        <div className="flex flex-col truncate">
-                          <button onClick={() => setPreviewCard(card.card_name)} className={`font-bold text-sm text-left truncate hover:text-cyan-400 transition-colors ${card.isStaple ? "text-white" : "text-[#e8e0d5]"}`}>{card.card_name}</button>
-                        </div>
-                      </div>
-                      <div className="flex items-center justify-between md:justify-end gap-6 w-full md:w-auto mt-2 md:mt-0">
-                        <div className="flex gap-4 shrink-0 bg-[#050308] p-2 border border-[#1c1611] rounded-sm shadow-inner">
-                          <Switch label="Staple" color="cyan" checked={card.isStaple} onChange={() => toggleStaple(card.id)} />
-                          <div className="w-px bg-[#1c1611]"></div>
-                          <Switch label="En Mazo" color="emerald" checked={card.inDeck} onChange={() => toggleInDeck(card.id)} />
-                        </div>
-                      </div>
-                    </div>
+                    <InteractiveCardRow
+                      key={card.id}
+                      id={card.id}
+                      name={card.card_name}
+                      quantity={card.quantity}
+                      type={card.type}
+                      colors={card.colors}
+                      isStaple={card.isStaple}
+                      inDeck={card.inDeck}
+                      onPreview={setPreviewCard}
+                      onToggleStaple={toggleStaple}
+                      onToggleInDeck={toggleInDeck}
+                    />
                   ))}
                 </div>
               </div>
