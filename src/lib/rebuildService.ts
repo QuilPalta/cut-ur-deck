@@ -3,7 +3,7 @@ import { SupabaseClient } from "@supabase/supabase-js";
 export interface RebuildItem {
   cardName: string;
   qty: number;
-  copyIds: string[]; // IDs físicos para actualizar luego
+  copyIds: string[];
 }
 
 export interface RebuildSource {
@@ -25,36 +25,31 @@ export const rebuildService = {
     const sourcesMap = new Map<string, RebuildSource>();
 
     deckList.forEach(demand => {
-      // 1. Verificamos si esta carta es un staple rastreado
+      // 1. Validamos que la carta sea un staple rastreado
       const ownedCopies = physicalCards?.filter(c => c.card_name === demand.card_name) || [];
       if (ownedCopies.length === 0) return; 
 
-      // 2. ¿Cuántas nos faltan FÍSICAMENTE en este mazo?
+      // 2. Revisamos cuántas nos faltan FÍSICAMENTE en este mazo
       const inThisDeck = ownedCopies.filter(c => c.current_deck_id === deckId);
       const missingQty = demand.quantity - inThisDeck.length;
 
       if (missingQty > 0) {
-        // 3. Buscar de dónde robar las cartas faltantes
-        const available = ownedCopies.filter(c => c.current_deck_id !== deckId);
-        
-        // Prioridad táctica: Robar primero de la carpeta libre (null), luego de otros mazos
-        available.sort((a, b) => {
-          if (a.current_deck_id === null && b.current_deck_id !== null) return -1;
-          if (a.current_deck_id !== null && b.current_deck_id === null) return 1;
-          return 0;
-        });
+        // 3. Buscar de dónde robar las cartas (Aplicando la regla de Juanito y Pepito)
+        // Ignoramos completamente cualquier fantasma (null) y evitamos robarnos a nosotros mismos
+        const available = ownedCopies.filter(c => c.current_deck_id !== deckId && c.current_deck_id !== null);
 
-        // Tomamos las cartas que necesitemos (hasta donde alcance el inventario)
+        // Tomamos solo las cartas físicas reales que necesitemos
         const taken = available.slice(0, missingQty);
 
-        // 4. Agrupar las instrucciones por Origen (Mazo Donante o Carpeta)
+        // 4. Agrupar las instrucciones por Mazo Donante
         taken.forEach(copy => {
-          const sourceKey = copy.current_deck_id || "folder";
+          // Ya sabemos que current_deck_id no es nulo gracias al filtro anterior
+          const sourceKey = copy.current_deck_id!;
           
           if (!sourcesMap.has(sourceKey)) {
             sourcesMap.set(sourceKey, {
-              sourceId: copy.current_deck_id,
-              sourceName: copy.current_deck_id ? (deckMap.get(copy.current_deck_id) || "Mazo Desconocido") : "Carpeta Libre",
+              sourceId: sourceKey,
+              sourceName: deckMap.get(sourceKey) || "Mazo Desconocido",
               items: []
             });
           }
@@ -78,7 +73,6 @@ export const rebuildService = {
     };
   },
 
-  // La orden maestra: Cambia de dueño todas las cartas del plan en un solo movimiento
   executeRebuild: async (supabase: SupabaseClient, userId: string, deckId: string, copyIds: string[]) => {
     if (copyIds.length === 0) return;
     const { error } = await supabase

@@ -2,6 +2,7 @@
 
 import { useState } from "react";
 import Switch from "@/components/ui/Switch";
+import { Trash2 } from "lucide-react";
 
 const ManaIcon = ({ symbol }: { symbol: string }) => {
   const [hasError, setHasError] = useState(false);
@@ -29,10 +30,11 @@ interface InteractiveCardRowProps {
   onPreview: (name: string) => void;
   onToggleStaple: (id: string) => void;
   onToggleInDeck: (id: string) => void;
+  onDelete?: (id: string, name: string) => void;
 }
 
 export default function InteractiveCardRow({
-  id, name, quantity, type, colors, isStaple, inDeck, onPreview, onToggleStaple, onToggleInDeck
+  id, name, quantity, type, colors, isStaple, inDeck, onPreview, onToggleStaple, onToggleInDeck, onDelete
 }: InteractiveCardRowProps) {
   return (
     <div className={`flex flex-col md:flex-row md:items-center justify-between gap-4 p-3 border-l-4 transition-colors rounded-r-sm shadow-sm ${
@@ -57,10 +59,22 @@ export default function InteractiveCardRow({
           </div>
         )}
         
-        <div className="flex gap-4 shrink-0 bg-[#050308] p-2 border border-[#1c1611] rounded-sm shadow-inner">
-          <Switch label="Staple" color="cyan" checked={isStaple} onChange={() => onToggleStaple(id)} />
-          <div className="w-px bg-[#1c1611]"></div>
-          <Switch label="En Mazo" color="emerald" checked={inDeck} onChange={() => onToggleInDeck(id)} />
+        <div className="flex items-center gap-4 shrink-0">
+          <div className="flex gap-4 bg-[#050308] p-2 border border-[#1c1611] rounded-sm shadow-inner">
+            <Switch label="Staple" color="cyan" checked={isStaple} onChange={() => onToggleStaple(id)} />
+            <div className="w-px bg-[#1c1611]"></div>
+            <Switch label="En Mazo" color="emerald" checked={inDeck} onChange={() => onToggleInDeck(id)} />
+          </div>
+          
+          {onDelete && (
+            <button 
+              onClick={() => onDelete(id, name)} 
+              className="p-2 text-[#8a7b6b] hover:text-red-500 hover:bg-red-950/40 rounded-sm transition-colors border border-transparent hover:border-red-900/50"
+              title="Eliminar del mazo"
+            >
+              <Trash2 className="w-4 h-4" />
+            </button>
+          )}
         </div>
       </div>
     </div>

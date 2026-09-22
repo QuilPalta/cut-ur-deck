@@ -33,7 +33,6 @@ export const deckService = {
     const { error: listError } = await supabase.from("deck_lists").insert(deckListsToInsert);
     if (listError) throw listError;
 
-    // Lógica Anti-Fantasma
     const staples = parsedCards.filter(c => c.isStaple);
     const { data: existingPhysical } = await supabase.from("physical_cards").select("id, card_name, current_deck_id").eq("user_id", userId);
     let localPhysical = existingPhysical ? [...existingPhysical] : [];
@@ -51,7 +50,6 @@ export const deckService = {
           if (data) localPhysical.push(data);
         }
       } else {
-        // Solo creamos copia en carpeta SI EL USUARIO NO POSEE NINGUNA (primera vez que registra la staple)
         if (owned.length === 0) {
           const { data } = await supabase.from("physical_cards").insert({ user_id: userId, card_name: card.name, current_deck_id: null }).select().single();
           if (data) localPhysical.push(data);
@@ -158,5 +156,38 @@ export const deckService = {
         }
       }
     }
+  },
+
+  // NUEVOS MÉTODOS PARA EL EDITOR DINÁMICO
+  addCardToDeck: async (supabase: SupabaseClient, deckId: string, cardName: string, qty: number) => {
+    let typeLine = "Carta";
+    let colors: string[] = [];
+    
+    // Obtenemos los metadatos de Scryfall para mantener las agrupaciones por color/tipo funcionando
+    try {
+      const res = await fetch(`https://api.scryfall.com/cards/named?exact=${encodeURIComponent(cardName)}`);
+      if (res.ok) {
+        const data = await res.json();
+        typeLine = data.type_line || typeLine;
+        colors = data.color_identity || [];
+      }
+    } catch (e) {
+      console.warn("No se pudo obtener datos de Scryfall para:", cardName);
+    }
+
+    const { error } = await supabase.from("deck_lists").insert({
+      deck_id: deckId,
+      card_name: cardName,
+      quantity: qty,
+      type_line: typeLine,
+      colors: colors
+    });
+
+    if (error) throw error;
+  },
+
+  removeCardFromDeck: async (supabase: SupabaseClient, cardId: string) => {
+    const { error } = await supabase.from("deck_lists").delete().eq("id", cardId);
+    if (error) throw error;
   }
 };
