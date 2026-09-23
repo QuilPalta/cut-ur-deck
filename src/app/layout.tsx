@@ -6,7 +6,7 @@ const cinzel = Cinzel({ subsets: ["latin"], weight: ["400", "700", "900"], varia
 const inter = Inter({ subsets: ["latin"], variable: "--font-inter" });
 
 export const metadata = {
-  title: "Chaotic Storage & Liga",
+  title: "CutUrDeck",
   description: "Herramientas de logística y juego organizado para Magic: The Gathering.",
 };
 
