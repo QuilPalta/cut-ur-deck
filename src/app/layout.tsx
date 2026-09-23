@@ -1,61 +1,25 @@
-import type { Metadata } from "next";
-import { Cinzel, Crimson_Pro } from "next/font/google";
 import "./globals.css";
-import Link from "next/link";
-import MagicalCutLogo from "@/components/MagicalCutLogo";
+import { Cinzel, Inter } from "next/font/google";
 import MysticBackground from "@/components/MysticBackground";
-import UserMenu from "@/components/UserMenu"; // Importamos el nuevo componente
 
-const cinzel = Cinzel({ subsets: ["latin"], weight: ["400", "700", "900"] });
-const crimson = Crimson_Pro({ subsets: ["latin"], weight: ["400", "600", "700"] });
+const cinzel = Cinzel({ subsets: ["latin"], weight: ["400", "700", "900"], variable: "--font-cinzel" });
+const inter = Inter({ subsets: ["latin"], variable: "--font-inter" });
 
-export const metadata: Metadata = {
-  title: "Cut Ur Deck",
-  description: "Centro de comando y logística para tus mazos de Commander.",
+export const metadata = {
+  title: "Chaotic Storage & Liga",
+  description: "Herramientas de logística y juego organizado para Magic: The Gathering.",
 };
 
 export default function RootLayout({
   children,
-}: Readonly<{
+}: {
   children: React.ReactNode;
-}>) {
+}) {
   return (
-    <html lang="es" suppressHydrationWarning>
-      <body className={`${crimson.className} min-h-screen flex flex-col text-[#e8e0d5] selection:bg-cyan-900/50`}>
-        
-        {/* FONDO GLOBAL INYECTADO */}
+    <html lang="es" className={`${cinzel.variable} ${inter.variable}`}>
+      <body className="bg-[#020104] text-[#e8e0d5] min-h-screen flex flex-col font-sans selection:bg-cyan-900/50 selection:text-cyan-100">
         <MysticBackground />
-        
-        {/* ENCABEZADO GLOBAL */}
-        <header className="relative z-50 w-full border-b-[3px] border-[#1c1611] shadow-2xl" style={{ backgroundColor: "#0a0612" }}>
-          
-          <div className="absolute inset-0 opacity-30 mix-blend-overlay pointer-events-none" style={{ backgroundImage: "url('https://grainy-gradients.vercel.app/noise.svg')" }}></div>
-          
-          <nav className="relative w-full max-w-7xl mx-auto px-6 py-4 flex items-center justify-between">
-            <Link href="/" className="flex items-center gap-4 group">
-              <MagicalCutLogo className="w-12 h-12 transition-transform duration-300 group-hover:scale-110 group-hover:-rotate-3" />
-              <div className="flex flex-col">
-                <span className={`text-2xl font-black tracking-widest uppercase text-[#e8e0d5] leading-none drop-shadow-md ${cinzel.className}`}>
-                  Cut Ur Deck
-                </span>
-                <span className="text-[10px] uppercase tracking-widest text-cyan-400 font-bold mt-1">
-                  Logística de Staples
-                </span>
-              </div>
-            </Link>
-
-            <div className="flex items-center gap-4">
-              {/* Aquí insertamos el componente inteligente que maneja el perfil */}
-              <UserMenu />
-            </div>
-          </nav>
-        </header>
-
-        {/* CONTENEDOR DE VISTAS DINÁMICAS */}
-        <div className="flex-1 relative flex flex-col z-10">
-          {children}
-        </div>
-
+        {children}
       </body>
     </html>
   );

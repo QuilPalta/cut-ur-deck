@@ -189,5 +189,21 @@ export const deckService = {
   removeCardFromDeck: async (supabase: SupabaseClient, cardId: string) => {
     const { error } = await supabase.from("deck_lists").delete().eq("id", cardId);
     if (error) throw error;
+  },
+  
+  updateDeckMeta: async (supabase: SupabaseClient, deckId: string, name: string, commanderName: string) => {
+    const { error } = await supabase.from("decks").update({ 
+      name: name.trim() || "Mazo sin título", 
+      commander_name: commanderName 
+    }).eq("id", deckId);
+    
+    if (error) throw error;
+  },
+
+  deleteDeck: async (supabase: SupabaseClient, deckId: string) => {
+    // Nota: Si configuraste tu base de datos con ON DELETE CASCADE, 
+    // esto borrará automáticamente las deck_lists y physical_cards asociadas a este mazo.
+    const { error } = await supabase.from("decks").delete().eq("id", deckId);
+    if (error) throw error;
   }
 };
