@@ -3,17 +3,21 @@
 import { useEffect, useState } from "react";
 import { createClient } from "@/lib/supabase/client";
 import { Cinzel } from "next/font/google";
-import { Loader2, Swords, Trophy, Crown, AlertCircle, ArrowRight } from "lucide-react";
+import { Loader2, Swords, Trophy, Crown, AlertCircle, ArrowRight, Dices } from "lucide-react";
 import Link from "next/link";
 import Button from "@/components/ui/Button";
+import AvatarRenderer from "@/components/AvatarRenderer";
 
 const cinzel = Cinzel({ subsets: ["latin"], weight: ["400", "700", "900"] });
 
 interface LeaderboardPlayer {
   id: string;
   nickname: string;
+  avatar_config: any;
   points: number;
   matchesPlayed: number;
+  wins: number;
+  isAbsoluteTie?: boolean;
 }
 
 export default function LeaguePublicPage() {
@@ -28,13 +32,11 @@ export default function LeaguePublicPage() {
   const [leaderboard, setLeaderboard] = useState<LeaderboardPlayer[]>([]);
   const [activeMatch, setActiveMatch] = useState<any>(null);
 
-  // 1. Carga Inicial: Buscar todas las ligas activas y mesas pendientes del usuario
   useEffect(() => {
     const fetchInitialData = async () => {
       const { data: { session } } = await supabase.auth.getSession();
       const userId = session?.user?.id;
 
-      // Traer TODAS las ligas activas
       const { data: leagues } = await supabase
         .from("leagues")
         .select("*")
@@ -43,9 +45,8 @@ export default function LeaguePublicPage() {
       
       if (leagues && leagues.length > 0) {
         setActiveLeagues(leagues);
-        setSelectedLeague(leagues[0]); // Seleccionar la más reciente por defecto
+        setSelectedLeague(leagues[0]);
 
-        // Buscar si el usuario tiene mesa abierta en CUALQUIERA de las ligas activas
         if (userId) {
           const leagueIds = leagues.map(l => l.id);
           const { data: openMatch } = await supabase.from("league_match_players")
@@ -70,7 +71,6 @@ export default function LeaguePublicPage() {
     fetchInitialData();
   }, [supabase]);
 
-  // 2. Cargar el Leaderboard cuando cambia la liga seleccionada
   useEffect(() => {
     if (!selectedLeague) return;
 
@@ -78,7 +78,7 @@ export default function LeaguePublicPage() {
       setLoadingBoard(true);
 
       const { data: participants } = await supabase.from("league_participants")
-        .select("player_id, league_players(profiles(nickname))")
+        .select("player_id, league_players(profiles(nickname, avatar_config))")
         .eq("league_id", selectedLeague.id);
 
       const { data: matchPlayers } = await supabase.from("league_match_players")
@@ -87,26 +87,56 @@ export default function LeaguePublicPage() {
         .eq("league_matches.is_closed", true);
 
       const { data: scores } = await supabase.from("league_scores")
-        .select("player_id, qty, league_achievements(points), league_matches!inner(league_id, is_closed)")
+        .select("player_id, qty, league_achievements(description, points), league_matches!inner(league_id, is_closed)")
         .eq("league_matches.league_id", selectedLeague.id)
         .eq("league_matches.is_closed", true);
 
       if (participants) {
-        const calculatedBoard = participants.map((p: any) => {
+        const winKeywords = ["ganador", "gana", "victoria", "primer lugar", "1er lugar", "sobreviviente"];
+
+        let calculatedBoard: LeaderboardPlayer[] = participants.map((p: any) => {
           const pMatches = matchPlayers?.filter(mp => mp.player_id === p.player_id) || [];
           const pScores = scores?.filter(s => s.player_id === p.player_id) || [];
+          
           const totalPoints = pScores.reduce((acc, s: any) => acc + (s.qty * s.league_achievements.points), 0);
+          
+          const wins = pScores.filter((s: any) => 
+            winKeywords.some(kw => s.league_achievements?.description.toLowerCase().includes(kw))
+          ).reduce((acc, s: any) => acc + s.qty, 0);
 
           return {
             id: p.player_id,
             nickname: p.league_players?.profiles?.nickname || "Desconocido",
+            avatar_config: p.league_players?.profiles?.avatar_config || {},
             points: totalPoints,
-            matchesPlayed: pMatches.length
+            matchesPlayed: pMatches.length,
+            wins: wins
           };
         });
 
-        calculatedBoard.sort((a, b) => b.points - a.points);
-        setLeaderboard(calculatedBoard);
+        // 1. Ordenamos por desempate en cascada
+        calculatedBoard.sort((a, b) => {
+          if (b.points !== a.points) return b.points - a.points;             
+          if (b.wins !== a.wins) return b.wins - a.wins;                     
+          if (a.matchesPlayed !== b.matchesPlayed) return a.matchesPlayed - b.matchesPlayed; 
+          return a.nickname.localeCompare(b.nickname);                       
+        });
+        
+        // 2. Detección del "Empate Absoluto" para lanzar dados
+        const finalBoard = calculatedBoard.map((p, i, arr) => {
+          const prev = arr[i - 1];
+          const next = arr[i + 1];
+          
+          const tiedWithPrev = prev && prev.points === p.points && prev.wins === p.wins && prev.matchesPlayed === p.matchesPlayed;
+          const tiedWithNext = next && next.points === p.points && next.wins === p.wins && next.matchesPlayed === p.matchesPlayed;
+
+          return {
+            ...p,
+            isAbsoluteTie: tiedWithPrev || tiedWithNext
+          };
+        });
+        
+        setLeaderboard(finalBoard);
       }
       setLoadingBoard(false);
     };
@@ -118,7 +148,7 @@ export default function LeaguePublicPage() {
     return (
       <div className="flex flex-col items-center justify-center py-32">
         <Loader2 className="w-10 h-10 animate-spin text-amber-600 mb-4" />
-        <p className={`text-sm font-bold tracking-widest uppercase text-[#8a7b6b] ${cinzel.className}`}>Calculando puntajes...</p>
+        <p className={`text-sm font-bold tracking-widest uppercase text-[#8a7b6b] ${cinzel.className}`}>Calculando puntajes y desempates...</p>
       </div>
     );
   }
@@ -136,7 +166,6 @@ export default function LeaguePublicPage() {
   return (
     <main className="w-full max-w-5xl mx-auto px-4 sm:px-6 py-6 sm:py-10">
       
-      {/* BANNER DE PARTIDA EN CURSO */}
       {activeMatch && (
         <div className="mb-8 bg-gradient-to-r from-amber-900/40 to-amber-950/40 border border-amber-500/50 rounded-sm p-4 sm:p-6 shadow-[0_0_20px_rgba(245,158,11,0.15)] flex flex-col sm:flex-row items-center justify-between gap-4 animate-in fade-in slide-in-from-top-4">
           <div className="flex items-start gap-4">
@@ -161,7 +190,6 @@ export default function LeaguePublicPage() {
         </div>
       )}
 
-      {/* ENCABEZADO Y SELECTOR DE LIGA */}
       <header className="mb-8 flex flex-col sm:flex-row sm:items-end justify-between gap-6">
         <div className="text-center sm:text-left">
           <p className="text-xs font-bold uppercase tracking-widest text-cyan-600 mb-2">Tabla de Posiciones</p>
@@ -190,7 +218,6 @@ export default function LeaguePublicPage() {
         )}
       </header>
 
-      {/* TABLA DE POSICIONES */}
       <div className="bg-[#0e0917] border border-amber-900/30 rounded-sm shadow-2xl overflow-hidden relative">
         
         {loadingBoard && (
@@ -201,9 +228,10 @@ export default function LeaguePublicPage() {
 
         <div className="hidden sm:grid grid-cols-12 gap-4 bg-black/60 p-4 border-b border-amber-900/30">
           <div className="col-span-1 text-center text-xs font-bold uppercase tracking-widest text-[#8a7b6b]">Pos</div>
-          <div className="col-span-6 text-left text-xs font-bold uppercase tracking-widest text-[#8a7b6b]">Gladiador</div>
+          <div className="col-span-5 text-left text-xs font-bold uppercase tracking-widest text-[#8a7b6b]">Gladiador</div>
           <div className="col-span-2 text-center text-xs font-bold uppercase tracking-widest text-[#8a7b6b]">Partidas</div>
-          <div className="col-span-3 text-right text-xs font-bold uppercase tracking-widest text-amber-500">Puntaje</div>
+          <div className="col-span-2 text-center text-xs font-bold uppercase tracking-widest text-[#8a7b6b]">Victorias</div>
+          <div className="col-span-2 text-right text-xs font-bold uppercase tracking-widest text-amber-500">Puntaje</div>
         </div>
 
         <div className="flex flex-col">
@@ -217,13 +245,20 @@ export default function LeaguePublicPage() {
               const avg = player.matchesPlayed > 0 ? (player.points / player.matchesPlayed).toFixed(1) : "0";
 
               return (
-                <div key={player.id} className="grid grid-cols-1 sm:grid-cols-12 gap-4 p-4 border-b border-white/5 items-center hover:bg-white/[0.02] transition-colors">
+                <div key={player.id} className="grid grid-cols-1 sm:grid-cols-12 gap-4 p-4 border-b border-white/5 items-center hover:bg-white/[0.02] transition-colors group">
                   
+                  {/* MOBILE VIEW */}
                   <div className="flex items-center justify-between sm:hidden mb-2">
                     <div className="flex items-center gap-3">
                       <span className={`w-8 h-8 flex items-center justify-center rounded-sm font-black ${cinzel.className} ${isFirst ? 'bg-amber-500 text-black' : 'bg-black/60 text-[#8a7b6b]'}`}>
                         {index + 1}
                       </span>
+                      {player.isAbsoluteTie && (
+                        <div className="flex items-center gap-1 bg-cyan-950/50 px-2 py-1 rounded-sm border border-cyan-900/50">
+                          <Dices className="w-3 h-3 text-cyan-400 animate-bounce" />
+                          <span className="text-[9px] uppercase font-bold text-cyan-400 tracking-widest">Empate</span>
+                        </div>
+                      )}
                       {isFirst && <Crown className="w-5 h-5 text-amber-500" />}
                     </div>
                     <span className={`text-2xl font-black ${cinzel.className} text-amber-400`}>
@@ -231,19 +266,39 @@ export default function LeaguePublicPage() {
                     </span>
                   </div>
 
-                  <div className="flex flex-col sm:hidden">
-                    <span className={`text-lg font-bold text-[#e8e0d5] ${cinzel.className}`}>{player.nickname}</span>
-                    <span className="text-xs text-[#8a7b6b]">{player.matchesPlayed} partidas jugadas (Prom: {avg})</span>
+                  <div className="flex sm:hidden items-center gap-4">
+                    <Link href={`/league/players/${player.id}`} className="shrink-0 w-12 h-12 bg-black/40 border border-amber-900/50 rounded-full flex items-center justify-center overflow-hidden">
+                      <AvatarRenderer config={player.avatar_config} className="w-full h-full scale-110 translate-y-1" />
+                    </Link>
+                    <div className="flex flex-col">
+                      <Link href={`/league/players/${player.id}`} className={`text-lg font-bold text-[#e8e0d5] hover:text-amber-400 transition-colors ${cinzel.className}`}>
+                        {player.nickname}
+                      </Link>
+                      <span className="text-xs text-[#8a7b6b]">
+                        {player.matchesPlayed} partidas | {player.wins} victorias
+                      </span>
+                    </div>
                   </div>
 
-                  <div className="hidden sm:flex col-span-1 justify-center">
-                    <span className={`text-lg font-black ${cinzel.className} ${isFirst ? 'text-amber-500' : 'text-[#8a7b6b]'}`}>
+                  {/* DESKTOP VIEW */}
+                  <div className="hidden sm:flex col-span-1 flex-col items-center justify-center gap-1">
+                    <span className={`text-xl font-black ${cinzel.className} ${isFirst ? 'text-amber-500' : 'text-[#8a7b6b]'}`}>
                       #{index + 1}
                     </span>
+                    {player.isAbsoluteTie && (
+                      <span className="text-[8px] uppercase font-bold tracking-widest text-cyan-400 bg-cyan-950/50 border border-cyan-900/50 px-1 py-0.5 rounded-sm flex items-center gap-1" title="Empate absoluto. ¡Tiren los dados!">
+                        <Dices className="w-2.5 h-2.5" /> Empate
+                      </span>
+                    )}
                   </div>
                   
-                  <div className="hidden sm:flex col-span-6 items-center gap-3">
-                    <span className={`text-xl font-bold text-[#e8e0d5] ${cinzel.className}`}>{player.nickname}</span>
+                  <div className="hidden sm:flex col-span-5 items-center gap-4">
+                    <Link href={`/league/players/${player.id}`} className="shrink-0 w-12 h-12 bg-black/40 border border-amber-900/50 rounded-full flex items-center justify-center overflow-hidden group-hover:border-amber-500 transition-colors">
+                      <AvatarRenderer config={player.avatar_config} className="w-full h-full scale-110 translate-y-1" />
+                    </Link>
+                    <Link href={`/league/players/${player.id}`} className={`text-xl font-bold text-[#e8e0d5] group-hover:text-amber-400 transition-colors ${cinzel.className}`}>
+                      {player.nickname}
+                    </Link>
                     {isFirst && <Crown className="w-5 h-5 text-amber-500" />}
                   </div>
                   
@@ -251,8 +306,13 @@ export default function LeaguePublicPage() {
                     <span className="text-sm font-bold text-[#e8e0d5]">{player.matchesPlayed}</span>
                     <span className="text-[10px] uppercase text-[#8a7b6b]">Prom: {avg}</span>
                   </div>
+
+                  <div className="hidden sm:flex col-span-2 flex-col items-center">
+                    <span className="text-sm font-bold text-[#e8e0d5]">{player.wins}</span>
+                    <span className="text-[10px] uppercase text-cyan-600 font-bold">Mesas Ganadas</span>
+                  </div>
                   
-                  <div className="hidden sm:flex col-span-3 justify-end items-center gap-2">
+                  <div className="hidden sm:flex col-span-2 justify-end items-center gap-2">
                     <span className={`text-3xl font-black ${cinzel.className} text-amber-400`}>
                       {player.points}
                     </span>

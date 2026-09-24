@@ -3,8 +3,9 @@
 import { useEffect, useState, use } from "react";
 import { createClient } from "@/lib/supabase/client";
 import { Cinzel } from "next/font/google";
-import { Loader2, User, Swords, Target, Activity, Flame, ShieldAlert, ArrowLeft } from "lucide-react";
+import { Loader2, Swords, Target, Activity, Flame, ShieldAlert, ArrowLeft } from "lucide-react";
 import Link from "next/link";
+import AvatarRenderer from "@/components/AvatarRenderer";
 
 const cinzel = Cinzel({ subsets: ["latin"], weight: ["400", "700", "900"] });
 
@@ -23,8 +24,8 @@ export default function PlayerProfilePage({ params }: { params: Promise<{ id: st
   const [loading, setLoading] = useState(true);
   const [playerNotFound, setPlayerNotFound] = useState(false);
   
-  // Datos del Perfil
   const [nickname, setNickname] = useState("");
+  const [avatar, setAvatar] = useState<any>({});
   const [stats, setStats] = useState({
     totalPoints: 0,
     matchesPlayed: 0,
@@ -34,10 +35,9 @@ export default function PlayerProfilePage({ params }: { params: Promise<{ id: st
 
   useEffect(() => {
     const fetchPlayerStats = async () => {
-      // 1. Verificar que el jugador existe
       const { data: profile } = await supabase
         .from("profiles")
-        .select("nickname")
+        .select("nickname, avatar_config")
         .eq("id", targetPlayerId)
         .single();
 
@@ -47,8 +47,8 @@ export default function PlayerProfilePage({ params }: { params: Promise<{ id: st
         return;
       }
       setNickname(profile.nickname);
+      setAvatar(profile.avatar_config || {});
 
-      // 2. Extraer todas las mesas cerradas donde participó en TODAS las ligas
       const { data: matches } = await supabase
         .from("league_match_players")
         .select("match_id, league_matches!inner(is_closed)")
@@ -57,7 +57,6 @@ export default function PlayerProfilePage({ params }: { params: Promise<{ id: st
 
       const matchesPlayed = matches ? matches.length : 0;
 
-      // 3. Extraer todos sus puntajes en mesas cerradas
       const { data: scores } = await supabase
         .from("league_scores")
         .select("qty, league_achievements(id, description, points), league_matches!inner(is_closed)")
@@ -73,7 +72,6 @@ export default function PlayerProfilePage({ params }: { params: Promise<{ id: st
           const pointsEarned = s.qty * achPoints;
           totalPts += pointsEarned;
 
-          // Agrupar para los "Logros Insignia"
           const achId = s.league_achievements.id;
           if (!achCountMap.has(achId)) {
             achCountMap.set(achId, {
@@ -89,10 +87,9 @@ export default function PlayerProfilePage({ params }: { params: Promise<{ id: st
         });
       }
 
-      // Ordenar logros por la cantidad de veces que los sacó (de mayor a menor)
       const sortedAchievements = Array.from(achCountMap.values())
         .sort((a, b) => b.timesEarned - a.timesEarned)
-        .slice(0, 5); // Tomamos solo los 5 más frecuentes
+        .slice(0, 5);
 
       setStats({
         totalPoints: totalPts,
@@ -131,13 +128,13 @@ export default function PlayerProfilePage({ params }: { params: Promise<{ id: st
   return (
     <main className="w-full max-w-5xl mx-auto px-4 sm:px-6 py-6 sm:py-10">
       
-      {/* CABECERA DEL PERFIL */}
       <div className="bg-[#0e0917] border border-amber-900/30 rounded-sm shadow-2xl p-6 sm:p-10 mb-8 relative overflow-hidden">
         <div className="absolute top-0 right-0 w-64 h-64 bg-amber-600/5 rounded-bl-full z-0 pointer-events-none"></div>
         
         <div className="relative z-10 flex flex-col sm:flex-row items-center gap-6 sm:gap-10">
-          <div className="w-24 h-24 sm:w-32 sm:h-32 bg-black/60 border-2 border-amber-500/50 flex items-center justify-center rounded-sm shadow-[0_0_20px_rgba(245,158,11,0.15)] shrink-0">
-            <User className="w-12 h-12 sm:w-16 sm:h-16 text-amber-500/80" />
+          {/* AQUÍ INYECTAMOS EL AVATAR DEL JUGADOR */}
+          <div className="w-24 h-24 sm:w-32 sm:h-32 bg-black/60 border-2 border-amber-500/50 flex items-center justify-center rounded-full shadow-[0_0_20px_rgba(245,158,11,0.15)] shrink-0 overflow-hidden">
+            <AvatarRenderer config={avatar} className="w-full h-full scale-110 translate-y-2" />
           </div>
           <div className="text-center sm:text-left">
             <p className="text-xs font-bold uppercase tracking-widest text-cyan-600 mb-2">Perfil de Gladiador</p>
@@ -151,7 +148,6 @@ export default function PlayerProfilePage({ params }: { params: Promise<{ id: st
 
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-8">
         
-        {/* MÉTRICAS PRINCIPALES */}
         <div className="lg:col-span-1 space-y-4">
           <h2 className={`text-lg font-bold uppercase tracking-widest text-amber-500 flex items-center gap-2 mb-4 ${cinzel.className}`}>
             <Activity className="w-5 h-5" /> Rendimiento Global
@@ -182,7 +178,6 @@ export default function PlayerProfilePage({ params }: { params: Promise<{ id: st
           </div>
         </div>
 
-        {/* LOGROS INSIGNIA */}
         <div className="lg:col-span-2">
           <h2 className={`text-lg font-bold uppercase tracking-widest text-amber-500 flex items-center gap-2 mb-4 ${cinzel.className}`}>
             <Target className="w-5 h-5" /> Logros Insignia
@@ -198,7 +193,6 @@ export default function PlayerProfilePage({ params }: { params: Promise<{ id: st
               <div className="space-y-4">
                 {topAchievements.map((ach, idx) => (
                   <div key={idx} className="bg-black/60 border border-white/5 rounded-sm p-4 flex flex-col sm:flex-row sm:items-center justify-between gap-4 hover:bg-white/[0.02] transition-colors relative overflow-hidden">
-                    {/* Barra de fondo decorativa para el #1 */}
                     {idx === 0 && <div className="absolute left-0 top-0 bottom-0 w-1 bg-amber-500"></div>}
                     
                     <div className="flex-1">
