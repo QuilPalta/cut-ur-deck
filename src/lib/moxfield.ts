@@ -1,3 +1,5 @@
+"use server";
+
 export interface ParsedCard {
   id: string;
   qty: number;
@@ -5,7 +7,7 @@ export interface ParsedCard {
   type: string;
   colors: string[];
   isStaple: boolean;
-  inDeck: boolean; // Define si físicamente irá en este mazo
+  inDeck: boolean; 
 }
 
 export type MoxfieldImportResult = 
@@ -24,34 +26,32 @@ export async function importDeckFromMoxfield(url: string): Promise<MoxfieldImpor
     }
 
     const deckId = match[1];
-    const moxfieldApiUrl = `https://api.moxfield.com/v2/decks/all/${deckId}`;
     
-    let data;
-
-    try {
-      // Usamos AllOrigins para evadir tanto el CORS del navegador como los bloqueos de Cloudflare
-      const proxyUrl = `https://api.allorigins.win/get?url=${encodeURIComponent(moxfieldApiUrl)}`;
-      const res = await fetch(proxyUrl);
-      
-      if (!res.ok) throw new Error("Fallo en el proxy de AllOrigins.");
-
-      const proxyData = await res.json();
-      
-      // AllOrigins devuelve un objeto con una propiedad "contents" que es un gran string.
-      if (!proxyData.contents) throw new Error("Respuesta vacía del proxy.");
-
-      // Convertimos el string gigante en el objeto JSON de Moxfield
-      data = JSON.parse(proxyData.contents);
-      
-    } catch (e) {
-      console.error("Fallo de conexión proxy:", e);
-      return { success: false, error: "No se pudo conectar con Moxfield. La API podría estar saturada o bloqueando la conexión." };
+    // Hacemos la petición disfrazados de un navegador de escritorio (Google Chrome) para pasar Cloudflare
+    const res = await fetch(`https://api.moxfield.com/v2/decks/all/${deckId}`, {
+      method: "GET",
+      headers: {
+        "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",
+        "Accept": "application/json, text/plain, */*",
+        "Accept-Language": "en-US,en;q=0.9",
+        "Connection": "keep-alive"
+      },
+      // Evita que Next.js guarde en caché un error antiguo de Moxfield
+      cache: "no-store" 
+    });
+    
+    if (!res.ok) {
+      // Si a pesar del disfraz nos bloquean, devolvemos el código de error limpio para la interfaz
+      return { 
+        success: false, 
+        error: `Moxfield denegó el acceso (Error ${res.status}). Verifica que el mazo sea público.` 
+      };
     }
 
-    // Si Moxfield devolvió un error (ej. mazo privado o ID falsa), su JSON trae una propiedad "error"
-    // O si falta el mainboard, sabemos que no es un mazo válido
+    const data = await res.json();
+    
     if (data.error || !data.mainboard) {
-      return { success: false, error: "Moxfield rechazó la petición. Verifica que el enlace sea correcto y que el mazo sea público." };
+      return { success: false, error: "Moxfield no devolvió un mazo válido. Podría estar configurado como privado." };
     }
 
     const cards: ParsedCard[] = [];
@@ -84,7 +84,7 @@ export async function importDeckFromMoxfield(url: string): Promise<MoxfieldImpor
     return { success: true, data: { name: data.name || "Mazo Importado", cards } };
     
   } catch (err) {
-    console.error("Error crítico en importDeckFromMoxfield:", err);
-    return { success: false, error: "Ocurrió un error inesperado al procesar las cartas." };
+    console.error("Error crítico en backend importDeckFromMoxfield:", err);
+    return { success: false, error: "El servidor de Vercel falló al intentar conectar con Moxfield." };
   }
 }
