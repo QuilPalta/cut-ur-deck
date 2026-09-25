@@ -43,13 +43,25 @@ export default function CreateDeckPage() {
           return { id: String(idx), qty: match ? parseInt(match[1]) : 1, name: match ? match[2].trim() : line.trim(), type: "Carta", colors: [], isStaple: false, inDeck: true };
         });
         setParsedCards(newCards);
+        setStep(2);
       } else {
-        const { name, cards } = await importDeckFromMoxfield(moxfieldUrl);
-        setParsedCards(cards);
-        if (!deckName) setDeckName(name);
+        // NUEVA LÓGICA: Leemos el objeto de respuesta seguro
+        const result = await importDeckFromMoxfield(moxfieldUrl);
+        
+        if (!result.success) {
+          // Si falló (ej. mazo privado, link roto), mostramos tu error rojo sin colapsar la página
+          setImportError(result.error);
+          setLoading(false);
+          return; // Detenemos la ejecución aquí para no pasar al Paso 2
+        }
+
+        // Si todo salió bien, extraemos la data
+        setParsedCards(result.data.cards);
+        if (!deckName) setDeckName(result.data.name);
+        setStep(2);
       }
-      setStep(2);
     } catch (error: any) {
+      // Este catch ahora solo atrapará errores inesperados de frontend (como si el text parser falla)
       setImportError(error.message || "Error al analizar el mazo.");
     } finally {
       setLoading(false);
