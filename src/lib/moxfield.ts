@@ -1,5 +1,3 @@
-// Sin "use server", esto correrá en el cliente, pero Google nos dará el pase libre (CORS)
-
 export interface ParsedCard {
   id: string;
   qty: number;
@@ -14,9 +12,6 @@ export type MoxfieldImportResult =
   | { success: true; data: { name: string; cards: ParsedCard[] } }
   | { success: false; error: string };
 
-// Pega aquí la URL larguísima que te dio Google Apps Script (mantenla entre comillas)
-const GOOGLE_PROXY_URL = "https://script.google.com/macros/s/AKfycbyGAHJ8GXxBn90Yml18474uWiOowpDW--upE9WnWDHbMJP2loQ-95duuUxA7R0enTH8Pg/exec";
-
 export async function importDeckFromMoxfield(url: string): Promise<MoxfieldImportResult> {
   try {
     if (!url.trim()) {
@@ -30,20 +25,27 @@ export async function importDeckFromMoxfield(url: string): Promise<MoxfieldImpor
 
     const deckId = match[1];
     
-    // Le pasamos la ID a nuestro proxy privado de Google
-    const fetchUrl = `${GOOGLE_PROXY_URL}?id=${deckId}`;
+    // Nuestro Caballo de Troya: El proxy de Cloudflare Workers
+    const workerUrl = `https://old-bush-3d68.quilpalta.workers.dev/?id=${deckId}`;
     
-    const res = await fetch(fetchUrl);
+    const res = await fetch(workerUrl, {
+      method: 'GET',
+      headers: {
+        'Accept': 'application/json'
+      }
+    });
     
     if (!res.ok) {
-      return { success: false, error: "El proxy de Google no pudo responder." };
+      return { 
+        success: false, 
+        error: `Error al conectar mediante el Proxy (Error ${res.status}). Verifica que el enlace sea correcto y público.` 
+      };
     }
 
     const data = await res.json();
     
-    // Si la data viene con error o está vacía, Moxfield lo rechazó
     if (data.error || !data.mainboard) {
-      return { success: false, error: "Moxfield no entregó el mazo. Verifica que el enlace sea correcto y público." };
+      return { success: false, error: "Moxfield no devolvió un mazo válido. Podría estar configurado como privado." };
     }
 
     const cards: ParsedCard[] = [];
@@ -77,6 +79,6 @@ export async function importDeckFromMoxfield(url: string): Promise<MoxfieldImpor
     
   } catch (err) {
     console.error("Error crítico en importDeckFromMoxfield:", err);
-    return { success: false, error: "Ocurrió un error inesperado al descargar el mazo." };
+    return { success: false, error: "Fallo de conexión. El firewall de Moxfield podría estar bloqueando el proxy." };
   }
 }
