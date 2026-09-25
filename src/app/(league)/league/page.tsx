@@ -3,7 +3,7 @@
 import { useEffect, useState } from "react";
 import { createClient } from "@/lib/supabase/client";
 import { Cinzel } from "next/font/google";
-import { Loader2, Swords, Trophy, Crown, AlertCircle, ArrowRight, Dices } from "lucide-react";
+import { Loader2, Swords, Trophy, Crown, AlertCircle, ArrowRight, Dices, UserPlus, Clock } from "lucide-react";
 import Link from "next/link";
 import Button from "@/components/ui/Button";
 import AvatarRenderer from "@/components/AvatarRenderer";
@@ -26,6 +26,10 @@ export default function LeaguePublicPage() {
   const [loadingInitial, setLoadingInitial] = useState(true);
   const [loadingBoard, setLoadingBoard] = useState(false);
   
+  // Estado del jugador actual
+  const [playerStatus, setPlayerStatus] = useState<string | null>(null);
+  const [isRequesting, setIsRequesting] = useState(false);
+  
   const [activeLeagues, setActiveLeagues] = useState<any[]>([]);
   const [selectedLeague, setSelectedLeague] = useState<any>(null);
   
@@ -36,6 +40,16 @@ export default function LeaguePublicPage() {
     const fetchInitialData = async () => {
       const { data: { session } } = await supabase.auth.getSession();
       const userId = session?.user?.id;
+
+      // 1. Obtener estado del jugador actual
+      if (userId) {
+        const { data: pData } = await supabase.from("league_players").select("status").eq("id", userId).single();
+        if (pData) {
+          setPlayerStatus(pData.status);
+        } else {
+          setPlayerStatus("none");
+        }
+      }
 
       const { data: leagues } = await supabase
         .from("leagues")
@@ -144,6 +158,23 @@ export default function LeaguePublicPage() {
     fetchLeaderboard();
   }, [selectedLeague, supabase]);
 
+  const handleRequestAccess = async () => {
+    setIsRequesting(true);
+    const { data: { session } } = await supabase.auth.getSession();
+    if (session?.user) {
+      const { error } = await supabase.from("league_players").insert({
+        id: session.user.id,
+        status: "pending"
+      });
+      if (!error) {
+        setPlayerStatus("pending");
+      } else {
+        alert("Error al solicitar acceso. Intenta de nuevo.");
+      }
+    }
+    setIsRequesting(false);
+  };
+
   if (loadingInitial) {
     return (
       <div className="flex flex-col items-center justify-center py-32">
@@ -166,7 +197,39 @@ export default function LeaguePublicPage() {
   return (
     <main className="w-full max-w-5xl mx-auto px-4 sm:px-6 py-6 sm:py-10">
       
-      {activeMatch && (
+      {/* BANNER DE NUEVO JUGADOR: SOLICITAR ACCESO */}
+      {playerStatus === "none" && (
+        <div className="mb-8 bg-cyan-950/40 border border-cyan-500/50 rounded-sm p-4 sm:p-6 shadow-[0_0_20px_rgba(6,182,212,0.15)] flex flex-col sm:flex-row items-center justify-between gap-4 animate-in fade-in slide-in-from-top-4">
+          <div className="flex items-start gap-4">
+            <div className="bg-cyan-500/20 p-3 rounded-full shrink-0">
+              <UserPlus className="w-6 h-6 text-cyan-400" />
+            </div>
+            <div>
+              <h3 className="text-sm font-bold uppercase tracking-widest text-cyan-400">¡Bienvenido a la Arena!</h3>
+              <p className="text-[#e8e0d5] text-sm mt-1">Aún no eres parte oficial de la liga. Solicita acceso para que un administrador te apruebe.</p>
+            </div>
+          </div>
+          <Button onClick={handleRequestAccess} isLoading={isRequesting} className="w-full sm:w-auto !bg-cyan-600 hover:!bg-cyan-500 !text-white justify-center shadow-lg">
+            Solicitar Acceso
+          </Button>
+        </div>
+      )}
+
+      {/* BANNER DE ESTADO: PENDIENTE */}
+      {playerStatus === "pending" && (
+        <div className="mb-8 bg-amber-950/40 border border-amber-500/50 rounded-sm p-4 sm:p-6 shadow-[0_0_20px_rgba(245,158,11,0.15)] flex items-start gap-4 animate-in fade-in slide-in-from-top-4">
+          <div className="bg-amber-500/20 p-3 rounded-full shrink-0">
+            <Clock className="w-6 h-6 text-amber-400" />
+          </div>
+          <div>
+            <h3 className="text-sm font-bold uppercase tracking-widest text-amber-400">Solicitud en Revisión</h3>
+            <p className="text-[#e8e0d5] text-sm mt-1">Tu solicitud de ingreso fue enviada. Espera a que un administrador te apruebe en la sección de jugadores.</p>
+          </div>
+        </div>
+      )}
+
+      {/* BANNER DE PARTIDA EN CURSO */}
+      {activeMatch && playerStatus === "approved" && (
         <div className="mb-8 bg-gradient-to-r from-amber-900/40 to-amber-950/40 border border-amber-500/50 rounded-sm p-4 sm:p-6 shadow-[0_0_20px_rgba(245,158,11,0.15)] flex flex-col sm:flex-row items-center justify-between gap-4 animate-in fade-in slide-in-from-top-4">
           <div className="flex items-start gap-4">
             <div className="bg-amber-500/20 p-3 rounded-full shrink-0">
