@@ -1,4 +1,4 @@
-"use server";
+// ¡OJO! Ya no dice "use server" aquí arriba.
 
 export interface ParsedCard {
   id: string;
@@ -7,10 +7,9 @@ export interface ParsedCard {
   type: string;
   colors: string[];
   isStaple: boolean;
-  inDeck: boolean; // NUEVO: Define si físicamente irá en este mazo
+  inDeck: boolean; 
 }
 
-// NUEVO: Definimos el tipo de respuesta estandarizada para Server Actions
 export type MoxfieldImportResult = 
   | { success: true; data: { name: string; cards: ParsedCard[] } }
   | { success: false; error: string };
@@ -27,14 +26,15 @@ export async function importDeckFromMoxfield(url: string): Promise<MoxfieldImpor
     }
 
     const deckId = match[1];
+    let res;
     
-    const res = await fetch(`https://api.moxfield.com/v2/decks/all/${deckId}`, {
-      headers: {
-        // Moxfield agradece si pones un contacto, evita bloqueos futuros
-        "User-Agent": "CutUrDeck/1.0 (contacto@cuturdeck.site)", 
-        "Accept": "application/json"
-      }
-    });
+    // 1. Intentamos la conexión directa desde el celular/PC del usuario
+    try {
+      res = await fetch(`https://api.moxfield.com/v2/decks/all/${deckId}`);
+    } catch (e) {
+      // 2. Si el navegador bloquea la conexión directa (Error de CORS), usamos este puente público
+      res = await fetch(`https://corsproxy.io/?https://api.moxfield.com/v2/decks/all/${deckId}`);
+    }
     
     if (!res.ok) {
       return { success: false, error: "No se pudo obtener el mazo. Verifica que el enlace sea correcto y público." };
@@ -71,8 +71,7 @@ export async function importDeckFromMoxfield(url: string): Promise<MoxfieldImpor
     return { success: true, data: { name: data.name, cards } };
     
   } catch (err) {
-    // Si fetch falla por red o json() da error, lo atrapamos aquí sin tumbar el servidor
     console.error("Error en importDeckFromMoxfield:", err);
-    return { success: false, error: "Ocurrió un error interno al intentar conectar con Moxfield." };
+    return { success: false, error: "Ocurrió un error al intentar conectar con Moxfield desde tu navegador." };
   }
 }
