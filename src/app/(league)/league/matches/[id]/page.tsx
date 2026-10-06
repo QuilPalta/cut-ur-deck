@@ -101,51 +101,74 @@ export default function MatchReportPage({ params }: { params: Promise<{ id: stri
 
   // Manejar el (+ / -) de los puntos
   const handleScoreChange = async (playerId: string, achievementId: string, delta: number) => {
-    // Si la mesa está cerrada, o el jugador actual ya confirmó su resultado, no puede editar
     const myPlayer = players.find(p => p.player_id === currentUser);
     if (match.is_closed || (myPlayer && myPlayer.has_confirmed)) return;
 
     setProcessing(true);
-    const existingScore = scores.find(s => s.player_id === playerId && s.achievement_id === achievementId);
-    
-    let newQty = existingScore ? existingScore.qty + delta : delta;
-    if (newQty < 0) newQty = 0; // No pueden haber logros "negativos en cantidad"
+    try {
+      const existingScore = scores.find(s => s.player_id === playerId && s.achievement_id === achievementId);
+      
+      let newQty = existingScore ? existingScore.qty + delta : delta;
+      if (newQty < 0) newQty = 0; 
 
-    if (existingScore) {
-      if (newQty === 0) {
-        await supabase.from("league_scores").delete().eq("id", existingScore.id);
-        setScores(scores.filter(s => s.id !== existingScore.id));
-      } else {
-        await supabase.from("league_scores").update({ qty: newQty }).eq("id", existingScore.id);
-        setScores(scores.map(s => s.id === existingScore.id ? { ...s, qty: newQty } : s));
+      if (existingScore) {
+        if (newQty === 0) {
+          const { error } = await supabase.from("league_scores").delete().eq("id", existingScore.id);
+          if (error) throw error;
+          setScores(scores.filter(s => s.id !== existingScore.id));
+        } else {
+          const { error } = await supabase.from("league_scores").update({ qty: newQty }).eq("id", existingScore.id);
+          if (error) throw error;
+          setScores(scores.map(s => s.id === existingScore.id ? { ...s, qty: newQty } : s));
+        }
+      } else if (newQty > 0) {
+        const { data, error } = await supabase.from("league_scores")
+          .insert({ match_id: matchId, player_id: playerId, achievement_id: achievementId, qty: newQty })
+          .select().single();
+        if (error) throw error;
+        if (data) setScores([...scores, data]);
       }
-    } else if (newQty > 0) {
-      const { data } = await supabase.from("league_scores")
-        .insert({ match_id: matchId, player_id: playerId, achievement_id: achievementId, qty: newQty })
-        .select().single();
-      if (data) setScores([...scores, data]);
+    } catch (error: any) {
+      console.error("Bloqueo de seguridad RLS o error de conexión:", error);
+      alert("No se pudo actualizar el puntaje. Verifica tu conexión o recarga la página.");
+    } finally {
+      setProcessing(false);
     }
-    setProcessing(false);
   };
 
   const handleConfirm = async () => {
     if (!window.confirm("¿Estás seguro de confirmar? Ya no podrás editar puntos hasta que un admin reabra la mesa.")) return;
     setProcessing(true);
 
-    // 1. Confirmo mi estado
-    await supabase.from("league_match_players").update({ has_confirmed: true }).match({ match_id: matchId, player_id: currentUser });
-    
-    const updatedPlayers = players.map(p => p.player_id === currentUser ? { ...p, has_confirmed: true } : p);
-    setPlayers(updatedPlayers);
+    try {
+      // 1. Confirmo mi estado
+      const { error: confirmError } = await supabase
+        .from("league_match_players")
+        .update({ has_confirmed: true })
+        .match({ match_id: matchId, player_id: currentUser });
+      
+      if (confirmError) throw confirmError;
+      
+      const updatedPlayers = players.map(p => p.player_id === currentUser ? { ...p, has_confirmed: true } : p);
+      setPlayers(updatedPlayers);
 
-    // 2. Verificamos si TODOS han confirmado para cerrar la mesa
-    const allConfirmed = updatedPlayers.every(p => p.has_confirmed);
-    if (allConfirmed) {
-      await supabase.from("league_matches").update({ is_closed: true }).eq("id", matchId);
-      setMatch({ ...match, is_closed: true });
+      // 2. Verificamos si TODOS han confirmado para cerrar la mesa
+      const allConfirmed = updatedPlayers.every(p => p.has_confirmed);
+      if (allConfirmed) {
+        const { error: matchError } = await supabase
+          .from("league_matches")
+          .update({ is_closed: true })
+          .eq("id", matchId);
+          
+        if (matchError) throw matchError;
+        setMatch({ ...match, is_closed: true });
+      }
+    } catch (error: any) {
+      console.error("Error al confirmar la mesa:", error);
+      alert("Ocurrió un error al intentar confirmar. Es posible que no tengas permisos.");
+    } finally {
+      setProcessing(false);
     }
-    
-    setProcessing(false);
   };
 
   if (loading) {

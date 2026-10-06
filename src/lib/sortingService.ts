@@ -4,6 +4,11 @@ export type SortOrder = "asc" | "desc";
 export type FilterType = "all" | "staples" | "missing";
 export type GroupType = "none" | "type" | "color" | "status";
 
+// Órdenes canónicos de Magic: The Gathering y prioridades de la app
+const COLOR_ORDER = ["☀️ Blanco", "💧 Azul", "💀 Negro", "🔥 Rojo", "🌳 Verde", "🌈 Multicolor", "⚪ Incoloro / Desconocido"];
+const TYPE_ORDER = ["🧙‍♂️ Planeswalkers", "🗡️ Criaturas", "⚡ Instantáneos", "🔥 Conjuros", "⚙️ Artefactos", "✨ Encantamientos", "⛰️ Tierras", "❓ Tipo Desconocido"];
+const STATUS_ORDER = ["🔴 Faltantes Físicos (En Carpeta)", "🟢 Staples (En Bóveda)", "⚪ Cartas Base"];
+
 export const sortingService = {
   processCards: (
     cards: InteractiveCard[],
@@ -13,17 +18,19 @@ export const sortingService = {
     groupBy: GroupType
   ): Record<string, InteractiveCard[]> => {
     
-    // 1. Filtrar y Ordenar
+    // 1. Filtrar y Ordenar (con protección contra nulos)
     const displayedCards = [...cards]
-      .filter(card => card.card_name.toLowerCase().includes(searchTerm.toLowerCase()))
+      .filter(card => (card.card_name || "").toLowerCase().includes((searchTerm || "").toLowerCase()))
       .filter(card => {
         if (filterBy === "staples") return card.isStaple;
         if (filterBy === "missing") return card.isStaple && !card.inDeck; 
         return true;
       })
       .sort((a, b) => {
-        if (sortBy === "asc") return a.card_name.localeCompare(b.card_name);
-        return b.card_name.localeCompare(a.card_name);
+        const nameA = a.card_name || "";
+        const nameB = b.card_name || "";
+        if (sortBy === "asc") return nameA.localeCompare(nameB);
+        return nameB.localeCompare(nameA);
       });
 
     // 2. Agrupar
@@ -43,11 +50,11 @@ export const sortingService = {
         const typeStr = card.type?.toLowerCase() || "";
         if (!typeStr) groupKey = "❓ Tipo Desconocido";
         else if (typeStr.includes("creature")) groupKey = "🗡️ Criaturas";
+        else if (typeStr.includes("planeswalker")) groupKey = "🧙‍♂️ Planeswalkers";
         else if (typeStr.includes("instant")) groupKey = "⚡ Instantáneos";
         else if (typeStr.includes("sorcery")) groupKey = "🔥 Conjuros";
         else if (typeStr.includes("artifact")) groupKey = "⚙️ Artefactos";
         else if (typeStr.includes("enchantment")) groupKey = "✨ Encantamientos";
-        else if (typeStr.includes("planeswalker")) groupKey = "🧙‍♂️ Planeswalkers";
         else if (typeStr.includes("land")) groupKey = "⛰️ Tierras";
       } 
       else if (groupBy === "color") {
@@ -67,10 +74,21 @@ export const sortingService = {
       groups[groupKey].push(card);
     });
 
+    // 3. Aplicar ordenamiento semántico en lugar de alfabético
     const sortedGroups: Record<string, InteractiveCard[]> = {};
-    Object.keys(groups).sort().forEach(key => {
-      sortedGroups[key] = groups[key];
-    });
+    
+    const getOrderIndex = (key: string) => {
+      if (groupBy === "color") return COLOR_ORDER.indexOf(key) !== -1 ? COLOR_ORDER.indexOf(key) : 99;
+      if (groupBy === "type") return TYPE_ORDER.indexOf(key) !== -1 ? TYPE_ORDER.indexOf(key) : 99;
+      if (groupBy === "status") return STATUS_ORDER.indexOf(key) !== -1 ? STATUS_ORDER.indexOf(key) : 99;
+      return 99;
+    };
+
+    Object.keys(groups)
+      .sort((a, b) => getOrderIndex(a) - getOrderIndex(b))
+      .forEach(key => {
+        sortedGroups[key] = groups[key];
+      });
 
     return sortedGroups;
   }
