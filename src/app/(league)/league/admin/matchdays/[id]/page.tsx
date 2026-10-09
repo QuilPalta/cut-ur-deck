@@ -91,42 +91,79 @@ export default function MatchdayManagerPage({ params }: { params: Promise<{ id: 
     if (newSet.has(id)) newSet.delete(id); else newSet.add(id);
     setAttendance(newSet);
   };
-
   const handleGenerateMatchmaking = async () => {
-    if (attendance.size < 2) return alert("Se necesitan al menos 2 jugadores.");
+    if (attendance.size < 2) return alert("Se necesitan al menos 2 jugadores para armar una mesa.");
     setGenerating(true);
 
-    const presentPlayers = leaguePlayers.filter(p => attendance.has(p.id));
-    const tables = buildEDHTables(presentPlayers);
+    try {
+      let presentPlayers = leaguePlayers.filter(p => attendance.has(p.id));
 
-    for (let i = 0; i < tables.length; i++) {
-      const tablePlayers = tables[i];
-      const tableName = `Mesa ${i + 1}`;
-
-      const { data: matchData, error: matchErr } = await supabase.from("league_matches").insert({
-        league_id: matchday.league_id,
-        matchday_id: matchday.id,
-        table_name: tableName,
-        round_number: roundToGenerate // Guardamos el número de ronda
-      }).select().single();
-
-      if (matchErr || !matchData) {
-        console.error("Error creando mesa", matchErr);
-        continue;
+      // Algoritmo Fisher-Yates: Mezcla de jugadores para evitar mesas repetidas
+      for (let i = presentPlayers.length - 1; i > 0; i--) {
+        const j = Math.floor(Math.random() * (i + 1));
+        [presentPlayers[i], presentPlayers[j]] = [presentPlayers[j], presentPlayers[i]];
       }
 
-      const matchPlayersInserts = tablePlayers.map(p => ({ match_id: matchData.id, player_id: p.id }));
-      await supabase.from("league_match_players").insert(matchPlayersInserts);
+      const tables = buildEDHTables(presentPlayers);
       
-      const rolledAchievements = rollTableAchievements(randomPool, 6);
-      if (rolledAchievements.length > 0) {
-        const randomsInserts = rolledAchievements.map(a => ({ match_id: matchData.id, achievement_id: a.id }));
-        await supabase.from("league_match_randoms").insert(randomsInserts);
-      }
-    }
+      console.log("🛠️ Mesas generadas aleatoriamente:", tables);
 
-    window.location.reload();
+      for (let i = 0; i < tables.length; i++) {
+        const tablePlayers = tables[i];
+        const tableName = `Mesa ${i + 1}`;
+        
+        console.log(`⏳ Intentando crear ${tableName} con jugadores:`, tablePlayers);
+
+        // 1. Crear Mesa
+        const { data: matchData, error: matchErr } = await supabase.from("league_matches").insert({
+          league_id: matchday.league_id,
+          matchday_id: matchday.id,
+          table_name: tableName,
+          round_number: roundToGenerate
+        }).select().single();
+
+        if (matchErr || !matchData) {
+          console.error(`❌ Error al crear la tabla en Supabase (${tableName}):`, matchErr);
+          throw matchErr;
+        }
+
+        // 2. Sentar Jugadores
+        const matchPlayersInserts = tablePlayers.map(p => ({ match_id: matchData.id, player_id: p.id }));
+        const { error: playersErr } = await supabase.from("league_match_players").insert(matchPlayersInserts);
+        
+        if (playersErr) {
+          console.error(`❌ Error al sentar jugadores en ${tableName}:`, playersErr);
+          throw playersErr;
+        }
+        
+        // 3. Tirar los Dados (Logros Aleatorios)
+        const rolledAchievements = rollTableAchievements(randomPool, 6);
+        console.log(`🎲 Logros tirados para ${tableName}:`, rolledAchievements);
+        
+        if (rolledAchievements.length > 0) {
+          // Filtro crítico: Eliminar duplicados para evitar error de Llave Primaria
+          const uniqueAchievements = Array.from(new Set(rolledAchievements.map(a => a.id)))
+            .map(id => rolledAchievements.find(a => a.id === id)!);
+            
+          const randomsInserts = uniqueAchievements.map(a => ({ match_id: matchData.id, achievement_id: a.id }));
+          const { error: randomsErr } = await supabase.from("league_match_randoms").insert(randomsInserts);
+          
+          if (randomsErr) {
+            console.error(`❌ Error al insertar logros en ${tableName}:`, randomsErr);
+            throw randomsErr;
+          }
+        }
+      }
+      
+      window.location.reload();
+    } catch (error: any) {
+      console.error("🔥 Error crítico en Matchmaking:", error);
+      alert(`Fallo en la generación: ${error.message || "Revisa la consola (F12) para más detalles."}`);
+      setGenerating(false);
+    }
   };
+
+  
 
   const handleResetRound = async (roundNum: number) => {
     if (!window.confirm(`¿Seguro que deseas desarmar TODA la Ronda ${roundNum}? Se perderán los puntos anotados en ella.`)) return;
